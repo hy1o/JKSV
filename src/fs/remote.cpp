@@ -103,32 +103,54 @@ std::string fs::driveSignInGetAuthCode()
     return replyURL;
 }
 
-void fs::webDavInit() {
+void fs::webDavInit()
+{
     // Already initialized?
     if (rfs)
         return;
 
-    if (cfg::webdavOrigin.empty())
+    if (cfg::webdavServers.empty())
         return;
 
-    rfs::WebDav *webdav = new rfs::WebDav(cfg::webdavOrigin,
-                                          cfg::webdavUser,
-                                          cfg::webdavPassword);
-
-    std::string baseId = "/" + cfg::webdavBasePath + (cfg::webdavBasePath.empty() ? "" : "/");
-    rfsRootID = webdav->getDirID(JKSV_DRIVE_FOLDER, baseId);
-
-    // check access
-    if (!webdav->dirExists(JKSV_DRIVE_FOLDER, baseId)) // this could return false on auth/config related errors
+    for (const auto& server : cfg::webdavServers)
     {
-        if (!webdav->createDir(JKSV_DRIVE_FOLDER, baseId))
-        {
-            delete webdav;
-            ui::showPopMessage(POP_FRAME_DEFAULT, ui::getUICString("popWebdavFailed", 0));
-            return;
+        // Basic sanity check
+        if (server.origin.empty())
+            continue;
+
+        rfs::WebDav* webdav = new rfs::WebDav(
+            server.origin,
+            server.user,
+            server.password
+        );
+
+        std::string baseId = "/" + server.basePath + (server.basePath.empty() ? "" : "/");
+        std::string tmpRootID = webdav->getDirID(JKSV_DRIVE_FOLDER, baseId);
+
+        // check access 
+        if (!webdav->dirExists(JKSV_DRIVE_FOLDER, baseId)) {
+            if (!webdav->createDir(JKSV_DRIVE_FOLDER, baseId)) {
+                // Silent failure → try next server
+                delete webdav;
+                continue;
+            }
         }
+
+        // Success — commit this server
+        rfsRootID = tmpRootID;
+        rfs = webdav;
+
+        ui::showPopMessage(
+            POP_FRAME_DEFAULT,
+            ui::getUICString("popWebdavStarted", 0)
+        );
+        return;
     }
 
-    rfs = webdav;
-    ui::showPopMessage(POP_FRAME_DEFAULT, ui::getUICString("popWebdavStarted", 0));
+    // All servers failed
+    ui::showPopMessage(
+        POP_FRAME_DEFAULT,
+        ui::getUICString("popWebdavFailed", 0)
+    );
 }
+

@@ -35,5 +35,12 @@ namespace cfg
     extern std::vector<uint64_t> favorites;
     extern uint8_t sortType;
     extern std::string driveClientID, driveClientSecret, driveRefreshToken;
-    extern std::string webdavOrigin, webdavBasePath, webdavUser, webdavPassword;
+
+    struct WebDavServer {
+        std::string origin;
+        std::string basePath;
+        std::string user;
+        std::string password;
+    };
+    extern std::vector<WebDavServer> webdavServers;
 }

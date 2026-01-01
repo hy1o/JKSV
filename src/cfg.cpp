@@ -16,7 +16,7 @@ std::vector<uint64_t> cfg::favorites;
 static std::unordered_map<uint64_t, std::string> pathDefs;
 uint8_t cfg::sortType;
 std::string cfg::driveClientID, cfg::driveClientSecret, cfg::driveRefreshToken;
-std::string cfg::webdavOrigin, cfg::webdavBasePath, cfg::webdavUser, cfg::webdavPassword;
+std::vector<cfg::WebDavServer> cfg::webdavServers;
 
 
 const char *cfgPath = "sdmc:/config/JKSV/JKSV.cfg", *titleDefPath = "sdmc:/config/JKSV/titleDefs.txt", *workDirLegacy = "sdmc:/switch/jksv_dir.txt";
@@ -294,6 +294,26 @@ static void loadTitleDefs()
     }
 }
 
+static void parseWebDavServer(json_object* obj)
+{
+    cfg::WebDavServer server;
+    json_object *origin, *basepath, *username, *password;
+
+    if (json_object_object_get_ex(obj, "origin", &origin))
+        server.origin = json_object_get_string(origin);
+
+    if (json_object_object_get_ex(obj, "basepath", &basepath))
+        server.basePath = json_object_get_string(basepath);
+
+    if (json_object_object_get_ex(obj, "username", &username))
+        server.user = json_object_get_string(username);
+
+    if (json_object_object_get_ex(obj, "password", &password))
+        server.password = json_object_get_string(password);
+
+    cfg::webdavServers.push_back(std::move(server));
+}
+
 static void loadDriveConfig()
 {
     // Start Google Drive
@@ -330,23 +350,32 @@ static void loadDriveConfig()
 
     // Webdav
     json_object *webdavJSON = json_object_from_file("/config/JKSV/webdav.json");
-    json_object *origin, *basepath, *username, *password;
-    if (webdavJSON)
+    if (!webdavJSON)
+        return;
+
+    /* Clear existing config */
+    cfg::webdavServers.clear();
+
+    json_type type = json_object_get_type(webdavJSON);
+
+    if (type == json_type_object)
     {
-        if (json_object_object_get_ex(webdavJSON, "origin", &origin)) {
-            cfg::webdavOrigin = json_object_get_string(origin);
-        }
-        if (json_object_object_get_ex(webdavJSON, "basepath", &basepath)) {
-            cfg::webdavBasePath = json_object_get_string(basepath);
-        }
-        if (json_object_object_get_ex(webdavJSON, "username", &username)) {
-            cfg::webdavUser = json_object_get_string(username);
-        }
-        if (json_object_object_get_ex(webdavJSON, "password", &password)) {
-            cfg::webdavPassword = json_object_get_string(password);
+        // Old format (single server)
+        parseWebDavServer(webdavJSON);
+    }
+    else if (type == json_type_array)
+    {
+        // New format (multiple servers)
+        size_t count = json_object_array_length(webdavJSON);
+        for (size_t i = 0; i < count; i++)
+        {
+            json_object* entry = json_object_array_get_idx(webdavJSON, i);
+            if (entry && json_object_get_type(entry) == json_type_object)
+                parseWebDavServer(entry);
         }
     }
 }
+
 
 void cfg::loadConfig()
 {

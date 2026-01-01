@@ -38,7 +38,7 @@ INCLUDES	:=	inc inc/ui inc/fs inc/gfx
 EXEFS_SRC	:=	exefs_src
 APP_TITLE   :=  JKSV
 APP_AUTHOR  :=  JK (built by hylo)
-APP_VERSION :=  07.02.2024
+APP_VERSION :=  01.01.2026
 ROMFS	    :=	romfs
 ICON		:=	icon.jpg
 

@@ -8,6 +8,7 @@ rfs::WebDav::WebDav(const std::string& origin, const std::string& username, cons
     curl = curl_easy_init();
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
         if (!username.empty())
             curl_easy_setopt(curl, CURLOPT_USERNAME, username.c_str());
 
@@ -35,6 +36,7 @@ bool rfs::WebDav::resourceExists(const std::string& id) {
     curl_easy_setopt(local_curl, CURLOPT_CUSTOMREQUEST, "PROPFIND");
     curl_easy_setopt(local_curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(local_curl, CURLOPT_NOBODY, 1L); // do not include the response body
+    curl_easy_setopt(local_curl, CURLOPT_SSL_VERIFYPEER, false);
 
     CURLcode res = curl_easy_perform(local_curl);
 
@@ -77,6 +79,7 @@ bool rfs::WebDav::createDir(const std::string& dirName, const std::string& paren
 
     curl_easy_setopt(local_curl, CURLOPT_URL, fullUrl.c_str());
     curl_easy_setopt(local_curl, CURLOPT_CUSTOMREQUEST, "MKCOL");
+    curl_easy_setopt(local_curl, CURLOPT_SSL_VERIFYPEER, false);
 
     CURLcode res = curl_easy_perform(local_curl);
 
@@ -108,7 +111,7 @@ void rfs::WebDav::updateFile(const std::string& _fileID, curlFuncs::curlUpArgs *
     curl_easy_setopt(local_curl, CURLOPT_READDATA, _upload);
     curl_easy_setopt(local_curl, CURLOPT_UPLOAD_BUFFERSIZE, UPLOAD_BUFFER_SIZE);
     curl_easy_setopt(local_curl, CURLOPT_UPLOAD, 1);
-
+    curl_easy_setopt(local_curl, CURLOPT_SSL_VERIFYPEER, false);
 
     CURLcode res = curl_easy_perform(local_curl);
     if(res != CURLE_OK) {
@@ -129,9 +132,11 @@ void rfs::WebDav::downloadFile(const std::string& _fileID, curlFuncs::curlDlArgs
     CURL* local_curl = curl_easy_duphandle(curl);
 
     std::string fullUrl = origin + _fileID;
+    //fs::logWrite("WebDav: fullUrl: %s\n", fullUrl.c_str());
     curl_easy_setopt(local_curl, CURLOPT_URL, fullUrl.c_str());
     curl_easy_setopt(local_curl, CURLOPT_WRITEFUNCTION, writeDataBufferThreaded);
     curl_easy_setopt(local_curl, CURLOPT_WRITEDATA, &dlWrite);
+    curl_easy_setopt(local_curl, CURLOPT_SSL_VERIFYPEER, false);
     threadStart(&writeThread);
 
     CURLcode res = curl_easy_perform(local_curl);
@@ -153,6 +158,7 @@ void rfs::WebDav::deleteFile(const std::string& _fileID) {
     std::string fullUrl = origin + _fileID;
     curl_easy_setopt(local_curl, CURLOPT_URL, fullUrl.c_str());
     curl_easy_setopt(local_curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_easy_setopt(local_curl, CURLOPT_SSL_VERIFYPEER, false);
 
     CURLcode res = curl_easy_perform(local_curl);
     if(res != CURLE_OK) {
@@ -187,6 +193,7 @@ std::vector<rfs::RfsItem> rfs::WebDav::getListWithParent(const std::string& _par
 
     // we expect _resource to be properly escaped
     std::string fullUrl = origin + _parentId;
+    //fs::logWrite("WebDav: fullUrl %s\n", fullUrl.c_str());
 
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, "Depth: 1");
@@ -198,6 +205,7 @@ std::vector<rfs::RfsItem> rfs::WebDav::getListWithParent(const std::string& _par
     curl_easy_setopt(local_curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(local_curl, CURLOPT_WRITEFUNCTION, curlFuncs::writeDataString);
     curl_easy_setopt(local_curl, CURLOPT_WRITEDATA, &responseString);
+    curl_easy_setopt(local_curl, CURLOPT_SSL_VERIFYPEER, false);
 
     CURLcode res = curl_easy_perform(local_curl);
 
@@ -205,6 +213,13 @@ std::vector<rfs::RfsItem> rfs::WebDav::getListWithParent(const std::string& _par
         long response_code;
         curl_easy_getinfo(local_curl, CURLINFO_RESPONSE_CODE, &response_code);
         if(response_code == 207) { // 207 Multi-Status is a successful response for PROPFIND
+            /*
+            for(int i = 0 ; i != responseString.size(); ++i)
+                fs::logWrite("%c", responseString[i]);
+            fs::logWrite("\nLength: %d\n", responseString.size());
+            */
+
+//            fs::logWrite("WebDav: Response from WebDav. %s\n", responseString.c_str());
             fs::logWrite("WebDav: Response from WebDav. Parsing.\n");
             std::vector<rfs::RfsItem> items = parseXMLResponse(responseString);
 
@@ -251,11 +266,13 @@ std::vector<rfs::RfsItem> rfs::WebDav::parseXMLResponse(const std::string& xml) 
     tinyxml2::XMLElement *root = doc.RootElement();
     std::string nsPrefix = getNamespacePrefix(root, "DAV:");
     nsPrefix = !nsPrefix.empty() ? nsPrefix + ":" : nsPrefix;  // Append colon if non-empty
+    std::string nsPrefix2 = "lp1:";
 
     fs::logWrite("WebDav: Parsing response, using prefix: %s\n", nsPrefix.c_str());
 
     // Loop through the responses
     tinyxml2::XMLElement* responseElem = root->FirstChildElement((nsPrefix + "response").c_str());
+//    fs::logWrite("WebDav: FirstChildElement: %s\n", (nsPrefix + "response").c_str());
 
     std::string parentId;
 
@@ -270,7 +287,26 @@ std::vector<rfs::RfsItem> rfs::WebDav::parseXMLResponse(const std::string& xml) 
             if(hrefText.find(origin) == 0) {
                 hrefText = hrefText.substr(origin.length());
             }
+//            fs::logWrite("WebDav: hrefText: %s\n", hrefText.c_str());
             item.id = hrefText;
+//            item.name = hrefText;
+            std::string name;
+            size_t found = hrefText.find_last_of("/");
+            if (found >= hrefText.size()) {
+                fs::logWrite("WebDav: parsing hrefText failed\n");
+                fs::logWrite("WebDav: parsing hrefText failed. %s\n", hrefText.c_str());
+                name = "ERROR";
+            } else {
+                name = hrefText.substr(found+1);
+                while (true) {
+                    std::string to_find = "%20";
+                    found = name.find(to_find);
+                    if (found >= name.size())
+                        break;
+                    name.replace(name.find(to_find),to_find.length(), " ");
+                } 
+            }
+            item.name = name;
             item.parent = parentId;
         }
 
@@ -284,11 +320,17 @@ std::vector<rfs::RfsItem> rfs::WebDav::parseXMLResponse(const std::string& xml) 
                 }
 
                 tinyxml2::XMLElement* resourcetypeElem = propElem->FirstChildElement((nsPrefix + "resourcetype").c_str());
+                if (!resourcetypeElem) {
+                    resourcetypeElem = propElem->FirstChildElement((nsPrefix2 + "resourcetype").c_str());
+                }
                 if (resourcetypeElem) {
                     item.isDir = resourcetypeElem->FirstChildElement((nsPrefix + "collection").c_str()) != nullptr;
                 }
 
                 tinyxml2::XMLElement* contentLengthElem = propElem->FirstChildElement((nsPrefix + "getcontentlength").c_str());
+                if (!contentLengthElem) {
+                    contentLengthElem = propElem->FirstChildElement((nsPrefix2 + "getcontentlength").c_str());
+                }
                 if (contentLengthElem) {
                     const char* sizeStr = contentLengthElem->GetText();
                     if (sizeStr) {

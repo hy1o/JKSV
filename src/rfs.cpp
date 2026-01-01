@@ -1,4 +1,5 @@
 #include "rfs.h"
+#include "fs.h"
 
 std::vector<uint8_t> rfs::downloadBuffer;
 

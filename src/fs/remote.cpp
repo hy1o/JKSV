@@ -142,7 +142,8 @@ void fs::webDavInit()
 
         ui::showPopMessage(
             POP_FRAME_DEFAULT,
-            ui::getUICString("popWebdavStarted", 0)
+            ui::getUICString("popWebdavStarted", 0), 
+            server.origin.c_str()
         );
         return;
     }
